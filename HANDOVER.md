@@ -1,8 +1,12 @@
 # Handover — Qwen3-TTS Studio (local Windows testing)
 
-**Date:** 2026-06-09
+**Date:** 2026-06-10
 **Branch:** `claude/qwen3-tts-finetuning-6lixq8`
-**Status:** Code written & syntax-checked in the cloud. **Needs local run/test on Windows + RTX 5090.**
+**Status:** ✅ **Verified end-to-end on local Windows 11 + RTX 5090.** All Test
+checklist items below pass. No application-code changes were needed — the only
+fixes were to the **setup steps** (see "Local verification results"). Stack
+actually used: Python 3.12.13, torch 2.11.0+cu128, transformers 4.57.3,
+gradio 6.17.3, fastapi/starlette 1.x.
 
 ---
 
@@ -49,13 +53,22 @@ cd Qwen3-TTS-fork260609
 git checkout claude/qwen3-tts-finetuning-6lixq8
 git pull origin claude/qwen3-tts-finetuning-6lixq8
 
-uv sync
+uv venv --python 3.12
 .venv\Scripts\activate
-pip install torch --index-url https://download.pytorch.org/whl/cu128
-pip install -r server\requirements-server.txt
+uv pip install -e .
+uv pip install --reinstall torch torchaudio --index-url https://download.pytorch.org/whl/cu128
+uv pip install -r server\requirements-server.txt
 ```
 
 No Flash Attention 2, no faster-whisper, no ffmpeg needed.
+
+> ⚠️ **Do NOT use `uv sync`.** Upstream `pyproject.toml` declares
+> `requires-python = ">=3.9"`, but `accelerate==1.12.0` needs Python>=3.10, so
+> `uv sync`'s universal resolver fails. We must not edit the upstream
+> `pyproject.toml`, so use `uv pip install -e .` (resolves for the active
+> interpreter only). Then **`--reinstall`** torch from the cu128 index — a plain
+> install is a no-op because the CPU build already satisfies the version pin,
+> leaving you on `2.x+cpu` with no GPU.
 
 ---
 
@@ -129,16 +142,45 @@ python ui\launch_ui.py
 
 ---
 
-## Known risk points (cloud-unverifiable)
+## Local verification results (2026-06-10, Windows 11 + RTX 5090)
 
-| Area | File | Risk / fallback |
+Every Test-checklist item above passed. Highlights:
+
+- **API server**: `/health` ok, `/docs` shows all endpoints, `/gpu_stats` reads
+  real VRAM. VoiceDesign generated 24 kHz audio (client smoke test in
+  `tts_client_async.py` saved `design_test.wav`).
+- **Whisper**: `/auto_transcribe` works — 1st call ~24 s (model load), 2nd ~2.6 s
+  (cached). transformers 4.57.3 accepts `generate_kwargs={"language": ...}` and
+  `{"raw": waveform, "sampling_rate": 16000}` — **no fix needed**.
+- **Web UI (gradio 6.17.3)**: all 5 tabs render, route mounting (`/ja`, `/en`, …)
+  works, `gr.Timer` exists and the Settings GPU refresh returns live VRAM. Audio
+  components are `type="numpy"` and the tabs return `(sr, ndarray)` — playback OK.
+  End-to-end UI generation verified via `gradio_client` against `/generate_1`.
+- **CustomVoice picker**: `/custom_models` lists preset, `/load_custom_model`
+  loads `Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice`. **VRAM swap**: used stayed flat
+  (~16.7 GB) across free-then-load — no OOM. Speaker dropdown populated with 9
+  preset speakers; generation with `serena` works.
+- **Multi-app**: 3 concurrent client processes all succeeded, serialized by
+  `_GEN_LOCK` (staggered completion), while the UI was also running.
+
+### Non-blocking deprecation warnings (cosmetic, left as-is)
+
+| Where | Warning | Note |
 |---|---|---|
-| Gradio version API | `ui/app.py`, `ui/tabs/settings.py` | `gr.Timer`, JS `.change`, route mounting may differ by version |
-| transformers ASR call | `server/tts_whisper.py` | `generate_kwargs` / raw-array input signature |
-| Audio tuple format | `ui/tabs/*.py` | Gradio expects `(sr, ndarray)` for numpy audio |
-| CustomVoice VRAM swap | `server/tts_server_async.py` `load_custom_model` | free-then-load to avoid OOM; confirm on real GPU |
-| Dropdown dynamic update | `ui/tabs/custom_voice.py` | `gr.update(choices=...)` for speaker/model dropdowns |
-| `.bat` health wait | `Qwen3-TTS-Studio.bat` | PowerShell `Invoke-RestMethod` availability/policy |
+| `server/tts_server_async.py` `@app.on_event("startup")` | FastAPI: use lifespan handlers | still works on starlette 1.x |
+| `server/tts_whisper.py` `torch_dtype=` | transformers: use `dtype=` | pipeline still honors `torch_dtype` on 4.57.3 |
+| qwen_tts import | "SoX could not be found" | upstream `sox` pkg; not needed for the verified paths |
+
+## Known risk points — all verified OK against the installed versions
+
+| Area | File | Result |
+|---|---|---|
+| Gradio version API | `ui/app.py`, `ui/tabs/settings.py` | ✅ `gr.Timer`, JS `.change(js=...)`, `mount_gradio_app` all present in 6.17.3 |
+| transformers ASR call | `server/tts_whisper.py` | ✅ `generate_kwargs` + raw-array input accepted on 4.57.3 |
+| Audio tuple format | `ui/tabs/*.py` | ✅ `(sr, ndarray)` → `gr.Audio(type="numpy")` plays back |
+| CustomVoice VRAM swap | `server/tts_server_async.py` `load_custom_model` | ✅ free-then-load, no OOM on RTX 5090 |
+| Dropdown dynamic update | `ui/tabs/custom_voice.py` | ✅ speaker dropdown populated from `get_supported_speakers` |
+| `.bat` health wait | `Qwen3-TTS-Studio.bat` | not re-tested (manual launch used); see note below |
 
 ---
 

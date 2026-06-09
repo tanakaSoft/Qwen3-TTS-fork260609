@@ -76,33 +76,49 @@ git checkout claude/qwen3-tts-finetuning-6lixq8
 ## Step 3: Python 仮想環境 セットアップ
 
 ```powershell
-# リポジトリルートで、uv で環境構築
-uv sync
+# リポジトリルートで、Python 3.12 の仮想環境を作成
+uv venv --python 3.12
 
 # 仮想環境をアクティベート
 .venv\Scripts\activate
+
+# プロジェクトと依存をインストール
+uv pip install -e .
 
 # プロンプトが (.venv) で始まれば OK
 # 例: (.venv) PS C:\Users\YourName\Projects\Qwen3-TTS-fork260609>
 ```
 
+> **なぜ `uv sync` を使わないのか（実機検証で確認）**
+> upstream の `pyproject.toml` は `requires-python = ">=3.9"` だが、依存の
+> `accelerate==1.12.0` は Python>=3.10 を要求するため、`uv sync` のユニバーサル
+> 依存解決が **失敗** する（`No solution found ... python_full_version == '3.9.*'`）。
+> `pyproject.toml` は upstream 追従のため変更せず、現行インタプリタ向けに解決する
+> `uv pip install -e .` を使う（3.9 split を回避）。
+
 ---
 
 ## Step 4: PyTorch インストール（CUDA 12.8 対応）
 
+Step 3 の `uv pip install -e .` では PyPI の **CPU 版** torch が入る。RTX 5090
+（Blackwell / sm_120）で動かすには CUDA 12.8 版へ **入れ替え**が必要。バージョン
+番号が同じだと `uv pip install` はスキップするため、必ず `--reinstall` を付ける。
+
 ```powershell
-# CUDA 12.8 対応の PyTorch をインストール
-pip install torch --index-url https://download.pytorch.org/whl/cu128
+# CUDA 12.8 対応の PyTorch / torchaudio へ入れ替え（--reinstall が必須）
+uv pip install --reinstall torch torchaudio --index-url https://download.pytorch.org/whl/cu128
 
-# 確認
-python -c "import torch; print(f'PyTorch: {torch.__version__}'); print(f'CUDA: {torch.version.cuda}')"
+# 確認（cuda_available が True、capability が (12, 0) であること）
+python -c "import torch; print('PyTorch:', torch.__version__); print('CUDA:', torch.version.cuda); print('cuda_available:', torch.cuda.is_available())"
 
-# 出力例:
-# PyTorch: 2.6.0
+# 出力例（実機 RTX 5090 で確認）:
+# PyTorch: 2.11.0+cu128
 # CUDA: 12.8
+# cuda_available: True
 ```
 
-**重要**: CUDA バージョンが **12.8 以上** であることを確認。
+**重要**: 末尾が `+cu128` で `cuda_available: True` になっていること。`+cpu` の
+ままだと GPU を使えない（Step 3 直後はこの状態なので必ず入れ替える）。
 
 ---
 
