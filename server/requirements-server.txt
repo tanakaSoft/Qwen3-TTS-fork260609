@@ -1,7 +1,21 @@
 # Additional dependencies for the fork's API server (server/tts_server_async.py).
 # The core TTS dependencies come from the qwen-tts package itself (see pyproject.toml).
+#
 # Install with:  pip install -r server/requirements-server.txt
+#
+# NOTE on Flash Attention 2:
+# RTX 5090 (Blackwell sm_120) does NOT have official FA2 support in the upstream repo.
+# However, community-built wheels are available:
+#   Windows:  https://huggingface.co/marcorez8/flash-attn-windows-blackwell
+#   Linux:    Limited options; may fall back to standard attention.
+# If FA2 installation fails, the server will fall back to eager (standard PyTorch attention).
+#
 fastapi>=0.110
 uvicorn[standard]>=0.29
 python-multipart>=0.0.9
 requests>=2.31
+
+# Optional: Flash Attention 2 for Windows RTX 5090
+# Install separately: pip install https://huggingface.co/marcorez8/flash-attn-windows-blackwell/resolve/main/flash_attn-2.8.3-cp311-cp311-win_amd64.whl
+# (uncomment below if you want to auto-install, but URL may change)
+# flash-attn @ https://huggingface.co/marcorez8/flash-attn-windows-blackwell/resolve/main/flash_attn-2.8.3-cp311-cp311-win_amd64.whl ; sys_platform == 'win32'

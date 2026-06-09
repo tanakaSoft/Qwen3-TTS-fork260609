@@ -43,6 +43,34 @@ git checkout origin/main
 
 ---
 
+## 実装環境
+
+### **推奨：Windows ネイティブ + RTX 5090**
+
+このフォークは **Windows（Python + uv 仮想環境）での実行を前提** に設計されています。
+
+| 環境 | 対応状況 | 推奨度 |
+|---|---|---|
+| **Windows + RTX 5090 + FA2** | ✅ 最適 | ⭐⭐⭐⭐⭐ **推奨** |
+| **WSL2 + RTX 5090** | ⚠️ 動作するが FA2 利用困難 | ⭐⭐⭐ |
+
+**理由：**
+- Flash Attention 2 の Windows ホイール（marcorez8 等）が充実している
+- RTX 5090 は FA2 が必須（メモリ効率 2-3倍）
+- Windows で FA2 を使えば、eager より 2-3 割高速
+- API サーバーを Windows に置けば、Windows アプリから直結で最速
+
+### **WSL2 での実行（代替案）**
+
+WSL2 での実行も可能ですが、以下の制限があります：
+- Linux 向け Flash Attention ホイールが少ない → eager に落ちる
+- メモリ消費が 2-3 倍増える可能性
+- ファインチューニング時にバッチサイズを落とす必要がある可能性
+
+詳細は `docs/api_server.md` の「Windows vs WSL2 の選択」を参照
+
+---
+
 ## 構成
 
 ```
@@ -74,11 +102,32 @@ Qwen3-TTS-fork260609/
 
 ### [Unreleased]
 
+#### Setup & Documentation
+
 - `FORK_CHANGES.md` を新規作成。フォークの変更管理方針と復元ポイントを記録。
+- Windows ネイティブ実行を主軸に設計方針を変更。RTX 5090 での Flash Attention 2 利用を最適化。
+
+#### API Server Implementation
+
 - `server/tts_server_async.py` を追加。CustomVoice / VoiceDesign / VoiceClone の
   生成と、非同期ファインチューニング（バックグラウンドジョブ）を提供する FastAPI サーバー。
+  Windows/WSL2 cross-platform 対応（pathlib で path 処理）。
 - `server/tts_client_async.py` を追加。torch 不要の軽量 HTTP クライアント
-  （Windows / 他の WSL2 アプリから利用可能）。
+  （Windows / WSL2 / 他マシンから利用可能）。
 - `server/requirements-server.txt` を追加。API サーバー用の追加依存（fastapi 等）。
-- `docs/api_server.md` を追加。サーバーの起動方法・環境変数・エンドポイント・利用例を記載。
+  Flash Attention 2 の Windows ホイール（marcorez8 等）に関する注釈を追加。
+
+#### Documentation
+
+- `docs/api_server.md` を完全改訂。
+  - Windows PowerShell での セットアップ・実行を主軸に。
+  - WSL2 での実行も記載（代替案として）。
+  - Flash Attention 2 の Windows ホイール インストール手順。
+  - モデルキャッシュ位置（Windows: `C:\Users\..\.cache\huggingface`）。
+  - Windows vs WSL2 の性能比較表を追加。
+  - トラブルシューティング セクション追加。
+
+#### Implementation Notes
+
 - `qwen_tts/` 本体への変更なし。
+- 設計：Windows（FA2 使用、最高速） > WSL2（eager、代替）

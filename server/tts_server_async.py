@@ -301,7 +301,9 @@ async def generate_voice_clone(
 # Fine-tuning (async background job)
 # --------------------------------------------------------------------------- #
 def _run_subprocess(cmd: List[str]) -> None:
-    """Run a finetuning subprocess from the repo root, raising on failure."""
+    """Run a finetuning subprocess from the repo root, raising on failure.
+    Works on both Windows and Unix (pathlib handles path separators).
+    """
     result = subprocess.run(
         cmd,
         cwd=str(REPO_ROOT),
