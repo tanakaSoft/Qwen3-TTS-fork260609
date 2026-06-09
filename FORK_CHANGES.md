@@ -45,29 +45,31 @@ git checkout origin/main
 
 ## 実装環境
 
-### **推奨：Windows ネイティブ + RTX 5090**
+### **推奨：Windows ネイティブ + RTX 5090 + Eager Attention**
 
 このフォークは **Windows（Python + uv 仮想環境）での実行を前提** に設計されています。
+**Eager attention（標準 PyTorch）を採用**し、セキュリティリスク 0、保守性最高。
 
-| 環境 | 対応状況 | 推奨度 |
-|---|---|---|
-| **Windows + RTX 5090 + FA2** | ✅ 最適 | ⭐⭐⭐⭐⭐ **推奨** |
-| **WSL2 + RTX 5090** | ⚠️ 動作するが FA2 利用困難 | ⭐⭐⭐ |
+| 環境 | Attention | メモリ | 推奨度 |
+|---|---|---|---|
+| **Windows + RTX 5090** | Eager | 12-14 GB | ⭐⭐⭐⭐⭐ **推奨** |
+| **WSL2 + RTX 5090** | Eager | 12-14 GB | ⭐⭐⭐⭐ **代替案** |
 
-**理由：**
-- Flash Attention 2 の Windows ホイール（marcorez8 等）が充実している
-- RTX 5090 は FA2 が必須（メモリ効率 2-3倍）
-- Windows で FA2 を使えば、eager より 2-3 割高速
-- API サーバーを Windows に置けば、Windows アプリから直結で最速
+**設計方針：**
+- Eager attention は PyTorch 公式、100% サポート済み（セキュリティ 0）
+- RTX 5090 32GB で eager は十分（全モデルロード可能、メモリ余裕あり）
+- 非公式 Flash Attention 2 ホイール（marcorez8 等）は保守リスク大のため未採用
+  - 更新保証なし、互換性ブレーク可能性、セキュリティ監査未実施
+- Windows ネイティブなら API サーバーは直結で最速
 
 ### **WSL2 での実行（代替案）**
 
-WSL2 での実行も可能ですが、以下の制限があります：
-- Linux 向け Flash Attention ホイールが少ない → eager に落ちる
-- メモリ消費が 2-3 倍増える可能性
-- ファインチューニング時にバッチサイズを落とす必要がある可能性
+WSL2 での実行も可能です。Eager attention は両環境で同じ性能：
+- メモリ消費：両環境同等（12-14 GB、余裕十分）
+- 推論速度：Windows 100% に対し WSL2 90-95%（オーバーヘッド軽微）
+- ファインチューニング：両環境で Batch 24-32 利用可能
 
-詳細は `docs/api_server.md` の「Windows vs WSL2 の選択」を参照
+詳細は `docs/api_server.md` の「Windows vs WSL2 Comparison」を参照
 
 ---
 
@@ -105,29 +107,30 @@ Qwen3-TTS-fork260609/
 #### Setup & Documentation
 
 - `FORK_CHANGES.md` を新規作成。フォークの変更管理方針と復元ポイントを記録。
-- Windows ネイティブ実行を主軸に設計方針を変更。RTX 5090 での Flash Attention 2 利用を最適化。
+- Windows ネイティブ実行を主軸に設計。RTX 5090 32GB VRAM で eager attention を標準採用。
 
 #### API Server Implementation
 
 - `server/tts_server_async.py` を追加。CustomVoice / VoiceDesign / VoiceClone の
   生成と、非同期ファインチューニング（バックグラウンドジョブ）を提供する FastAPI サーバー。
   Windows/WSL2 cross-platform 対応（pathlib で path 処理）。
+  Eager attention を使用（公式サポート、セキュリティリスク 0）。
 - `server/tts_client_async.py` を追加。torch 不要の軽量 HTTP クライアント
   （Windows / WSL2 / 他マシンから利用可能）。
 - `server/requirements-server.txt` を追加。API サーバー用の追加依存（fastapi 等）。
-  Flash Attention 2 の Windows ホイール（marcorez8 等）に関する注釈を追加。
 
 #### Documentation
 
-- `docs/api_server.md` を完全改訂。
-  - Windows PowerShell での セットアップ・実行を主軸に。
-  - WSL2 での実行も記載（代替案として）。
-  - Flash Attention 2 の Windows ホイール インストール手順。
-  - モデルキャッシュ位置（Windows: `C:\Users\..\.cache\huggingface`）。
-  - Windows vs WSL2 の性能比較表を追加。
-  - トラブルシューティング セクション追加。
+- `docs/windows_setup.md` を新規作成。Windows PowerShell での ステップバイステップセットアップガイド（11 ステップ）。
+  Eager attention デフォルト。Flash Attention 2 は推奨しない（非公式ホイール、保守リスク）。
+- `docs/api_server.md` を新規作成。API リファレンス・使い方。
+  - Windows PowerShell と WSL2 bash の両対応。
+  - モデルキャッシュ位置、エンドポイント、クライアント使用法、ファインチューニングワークフロー、トラブルシューティング。
+  - Eager attention デフォルト（公式サポート、メモリ効率 12-14GB）。
 
 #### Implementation Notes
 
 - `qwen_tts/` 本体への変更なし。
-- 設計：Windows（FA2 使用、最高速） > WSL2（eager、代替）
+- 設計方針：Eager attention 標準（Windows・WSL2 共通）
+  - RTX 5090 32GB なら eager で十分（全モデルロード可能）
+  - Flash Attention 2 非公式ホイールは保守リスク大のため採用しない

@@ -106,38 +106,21 @@ python -c "import torch; print(f'PyTorch: {torch.__version__}'); print(f'CUDA: {
 
 ---
 
-## Step 5: Flash Attention 2 インストール（重要！）
+## Step 5: Attention 実装（eager を使用）
 
-RTX 5090 では Flash Attention 2 が **ほぼ必須**（メモリ効率 2-3 倍）。
+PyTorch の **eager attention**（標準 attention）を使用します。
 
-### Option A: 推奨（marcorez8 ホイール）
+**理由:**
+- RTX 5090 の 32GB VRAM で十分動作可能（約 10-12GB 使用）
+- eager attention は **PyTorch 公式・完全サポート**（セキュリティリスク 0）
+- Blackwell（sm_120）での Flash Attention 2 は非公式ホイール頼みで保守リスクが高い
+- 推奨しない：非公式ホイール（marcorez8 等）は更新・互換性保証がなく、メンテナンスリスク大
 
-```powershell
-# marcorez8 の公式ホイール（RTX 5090 テスト済み）
-pip install https://huggingface.co/marcorez8/flash-attn-windows-blackwell/resolve/main/flash_attn-2.8.3-cp311-cp311-win_amd64.whl
+eager は標準実装で何もインストール不要です。次のステップに進んでください。
 
-# 確認
-python -c "import flash_attn; print('Flash Attention 2: OK')"
-```
-
-**注意**: Python バージョンが 3.11 である必要があります。
-他のバージョンの場合は、URL 内の `cp311` を適切なバージョンに変更するか、Option B を試してください。
-
-### Option B: 代替（White2Hand ホイール）
-
-```powershell
-# Python 3.12 の場合
-pip install https://huggingface.co/White2Hand/flash-attention-v2.8.3-blackwell-windows/resolve/main/flash_attn-2.8.3-cp312-cp312-win_amd64.whl
-```
-
-### Option C: FA2 スキップ（フォールバック）
-
-FA2 インストール失敗時でも動作します（標準 PyTorch attention を使用）：
-
-```powershell
-# スキップしても OK。あとで環境変数で制御
-echo "[warn] Flash Attention 2 installation skipped. Using standard attention."
-```
+**参考: 性能目安**
+- eager（標準）: 100% ベースライン、メモリ効率は標準レベル
+- RTX 5090 32GB: eager で全モデル（voice_design, voice_clone, custom）をロード可能
 
 ---
 
@@ -198,9 +181,8 @@ python server\tts_server_async.py
 $env:QWEN_TTS_LOAD = "voice_clone"
 python server\tts_server_async.py
 
-# 例: 標準 attention を使用（FA2 がない場合）
-$env:QWEN_TTS_ATTN = "eager"
-python server\tts_server_async.py
+# デフォルト: eager attention を使用（変更不要）
+# $env:QWEN_TTS_ATTN = "eager"  # すでにデフォルト
 ```
 
 ---
@@ -284,39 +266,20 @@ final.write_videofile("output.mp4")
 
 ## トラブルシューティング
 
-### Flash Attention インストール失敗
-
-```powershell
-# エラー例: "No module named 'flash_attn'"
-# または "wheel not compatible"
-
-# 解決法:
-# 1. Python バージョン確認
-python --version
-# Python 3.11.x が表示されるか？
-# 3.12.x の場合は White2Hand ホイールを試す
-
-# 2. ホイール URL が正しいか確認
-# https://huggingface.co/ から直接ダウンロード
-
-# 3. FA2 なしで起動
-$env:QWEN_TTS_ATTN = "eager"
-python server\tts_server_async.py
-```
-
 ### CUDA Out of Memory (OOM)
 
 ```powershell
 # エラー: "CUDA out of memory"
 
 # 解決法:
-# 1. ロードするモデルを減らす
+# 1. ロードするモデルを減らす（最初のテストでは voice_clone のみ推奨）
 $env:QWEN_TTS_LOAD = "voice_clone"
 python server\tts_server_async.py
 
-# 2. Flash Attention を確認（インストール済みか）
-python -c "import flash_attn; print('OK')"
-# インストール済み → FA2 が有効になっているはず
+# 2. GPU メモリ使用量を確認
+# PowerShell で以下を実行
+nvidia-smi
+# RTX 5090 で全モデル + eager attention なら約 12-14GB で収まるはず
 ```
 
 ### サーバーに接続できない

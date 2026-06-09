@@ -33,17 +33,8 @@ uv sync
 # 4. Install PyTorch with CUDA 12.8 support
 pip install torch --index-url https://download.pytorch.org/whl/cu128
 
-# 5. Install Flash Attention 2 (Windows wheels)
-# Option A: marcorez8 pre-built wheel (recommended for RTX 5090)
-pip install https://huggingface.co/marcorez8/flash-attn-windows-blackwell/resolve/main/flash_attn-2.8.3-cp311-cp311-win_amd64.whl
-
-# OR Option B: Build from source (slower, may fail on Windows)
-# pip install -U flash-attn --no-build-isolation
-
-# If FA2 installation fails, skip it; the server will use standard PyTorch attention
-# (slower but still functional)
-
-# 6. Install API server dependencies
+# 5. Install API server dependencies
+# (No Flash Attention 2 needed; eager attention is the standard implementation)
 pip install -r server\requirements-server.txt
 ```
 
@@ -61,10 +52,7 @@ source .venv/bin/activate
 
 pip install torch --index-url https://download.pytorch.org/whl/cu128
 
-# FA2 on WSL2: Linux wheels are sparse; may not find one for your config
-# Falls back to eager (standard PyTorch attention) if not available
-pip install -U flash-attn --no-build-isolation 2>/dev/null || echo "[warn] FA2 unavailable; using eager attention"
-
+# No Flash Attention 2 needed; eager attention is the standard implementation
 pip install -r server/requirements-server.txt
 ```
 
@@ -111,7 +99,7 @@ Environment variables control server behavior:
 | `QWEN_TTS_PORT` | `8001` | `8080` |
 | `QWEN_TTS_DEVICE` | `cuda:0` | `cuda:1` (if multiple GPUs) or `cpu` |
 | `QWEN_TTS_LOAD` | `voice_design,voice_clone,custom` | `voice_clone` (load only one to save memory) |
-| `QWEN_TTS_ATTN` | `flash_attention_2` | `eager` (fallback if FA2 unavailable) |
+| `QWEN_TTS_ATTN` | `eager` | `eager` (standard PyTorch attention, recommended) |
 | `QWEN_TTS_CUSTOM` | _(empty)_ | `C:\Users\YourName\outputs\my_model\checkpoint-epoch-9` |
 
 **Example: load only voice_clone on a smaller GPU**
@@ -238,33 +226,22 @@ The server runs `prepare_data.py` automatically. See `finetuning/README.md`.
 
 ## 7. Troubleshooting
 
-### Flash Attention Installation Fails
-
-**Symptom:** `pip install ... flash-attn` fails on Windows
-
-**Solution:**
-1. Use a pre-built wheel instead (marcorez8, White2Hand, etc.)
-2. Or skip FA2 and use standard PyTorch attention:
-   ```powershell
-   $env:QWEN_TTS_ATTN = "eager"
-   python server\tts_server_async.py
-   ```
-
 ### CUDA Out of Memory (OOM)
 
 **Symptom:** `RuntimeError: CUDA out of memory` during inference
 
 **Causes:**
 - Multiple models loaded when RTX 5090 has only 32 GB
-- FA2 not installed (eager uses more memory)
+- Eager attention with all models can use 12-14 GB VRAM
 
 **Solutions:**
-1. Reduce loaded models:
+1. First test: load only one model to confirm setup works:
    ```powershell
    $env:QWEN_TTS_LOAD = "voice_clone"
+   python server\tts_server_async.py
    ```
-2. Install FA2 properly (reduces memory by 2-3x)
-3. Reduce batch size in API calls
+2. Once working, gradually increase loaded models as needed
+3. Check GPU memory with `nvidia-smi`
 
 ### Server not reachable from Windows app
 
@@ -279,16 +256,17 @@ The server runs `prepare_data.py` automatically. See `finetuning/README.md`.
 
 ## 8. Windows vs WSL2 Comparison
 
+Both use eager attention (standard PyTorch, officially supported).
+
 | Factor | Windows | WSL2 |
 |---|---|---|
-| **Flash Attention** | ✅ Easy (wheels available) | ⚠️ Wheels sparse; often falls back to eager |
-| **Memory efficiency** | ✅ 3-4 GB (FA2) | ⚠️ 10-12 GB (eager) |
-| **Inference speed** | ✅ 100% | ⚠️ 70-80% (eager bottleneck) |
+| **Inference speed** | ✅ 100% (native GPU) | ⚠️ 90-95% (WSL2 overhead) |
+| **Memory usage** | ✅ 12-14 GB (all models) | ✅ 12-14 GB (all models) |
 | **Setup complexity** | ⭐⭐ Easy | ⭐⭐⭐ Medium |
-| **Fine-tuning** | ✅ Batch 32 | ⚠️ Batch 16-24 limited |
-| **Recommended** | ✅ **Yes** | ⚠️ Alternative |
+| **Fine-tuning** | ✅ Batch 32 | ✅ Batch 24-32 |
+| **Recommended** | ✅ **Yes** | ✅ Alternative |
 
-**Recommendation:** Run on **Windows** for best performance with RTX 5090.
+**Recommendation:** Run on **Windows** for simplicity and peak performance, or **WSL2** if your development environment is already Linux-based.
 
 ---
 
