@@ -7,6 +7,11 @@
 # RTX 5090 (32 GB VRAM) easily supports eager attention with all models loaded (~12-14 GB).
 # Eager is 100% officially supported, with zero security or maintenance risk.
 #
+# Whisper auto-transcription (server/tts_whisper.py) uses the transformers Whisper
+# implementation, which rides on the already-installed transformers + torch stack.
+# Audio is decoded with librosa (a core qwen-tts dependency), so NO extra pip
+# packages and NO ffmpeg / CTranslate2 / cuDNN native libraries are needed.
+#
 fastapi>=0.110
 uvicorn[standard]>=0.29
 python-multipart>=0.0.9

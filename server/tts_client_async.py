@@ -43,6 +43,15 @@ class QwenTTSAsyncClient:
     def supported_languages(self) -> Optional[List[str]]:
         return requests.get(f"{self.server_url}/supported_languages", timeout=10).json()["languages"]
 
+    def gpu_stats(self) -> dict:
+        return requests.get(f"{self.server_url}/gpu_stats", timeout=10).json()
+
+    def clear_gpu_cache(self) -> dict:
+        return requests.post(f"{self.server_url}/clear_gpu_cache", timeout=10).json()
+
+    def whisper_models(self) -> dict:
+        return requests.get(f"{self.server_url}/whisper_models", timeout=10).json()
+
     # ------------------------------------------------------------------ #
     # Generation
     # ------------------------------------------------------------------ #
@@ -98,6 +107,23 @@ class QwenTTSAsyncClient:
                 timeout=self.timeout,
             )
         return self._unpack_audio(resp)
+
+    # ------------------------------------------------------------------ #
+    # Whisper auto-transcription
+    # ------------------------------------------------------------------ #
+    def auto_transcribe(
+        self, audio_path: str, model: str = "", language: str = "",
+    ) -> str:
+        """Transcribe an audio file via the server's Whisper model. Returns text."""
+        with open(audio_path, "rb") as f:
+            resp = requests.post(
+                f"{self.server_url}/auto_transcribe",
+                data={"model": model, "language": language},
+                files={"audio": f},
+                timeout=self.timeout,
+            )
+        self._raise_for_status(resp)
+        return resp.json()["text"]
 
     # ------------------------------------------------------------------ #
     # Fine-tuning

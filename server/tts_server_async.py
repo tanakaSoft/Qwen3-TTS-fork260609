@@ -19,6 +19,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import threading
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -39,7 +40,13 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 DEVICE = os.environ.get("QWEN_TTS_DEVICE", "cuda:0")
 DTYPE = torch.bfloat16
-ATTN_IMPL = os.environ.get("QWEN_TTS_ATTN", "flash_attention_2")
+# Eager (standard PyTorch) attention is the default: officially supported, zero
+# native-dependency risk, and sufficient on RTX 5090 (32 GB). See FORK_CHANGES.md.
+ATTN_IMPL = os.environ.get("QWEN_TTS_ATTN", "eager")
+
+# Whisper auto-transcription (transformers backend, no extra native deps).
+# Friendly model name; mapped to a HuggingFace id in server/tts_whisper.py.
+WHISPER_MODEL = os.environ.get("QWEN_TTS_WHISPER", "large-v3")
 
 TOKENIZER_MODEL = os.environ.get("QWEN_TTS_TOKENIZER", "Qwen/Qwen3-TTS-Tokenizer-12Hz")
 BASE_MODEL = os.environ.get("QWEN_TTS_BASE", "Qwen/Qwen3-TTS-12Hz-1.7B-Base")
@@ -67,8 +74,34 @@ models: Dict[str, Optional[Qwen3TTSModel]] = {
     "voice_clone": None,
 }
 
+# Single GPU: serialize all generation/transcription so concurrent clients
+# (the Web UI plus any other app on the machine) never run the model in
+# parallel on the same device. FastAPI runs sync endpoints in a threadpool,
+# so without this lock two requests could touch the GPU at once.
+_GEN_LOCK = threading.Lock()
+
+# Lazily-created Whisper transcriber (transformers backend). Loaded on first
+# /auto_transcribe call so startup stays fast and VRAM is only used on demand.
+_whisper = None  # type: ignore[var-annotated]
+_whisper_lock = threading.Lock()
+
 # In-memory fine-tuning job registry. Replace with a persistent store for prod.
 finetune_jobs: Dict[str, Dict] = {}
+
+
+def _get_whisper(model_name: Optional[str] = None):
+    """Return a ready WhisperTranscriber, (re)loading if the model changed."""
+    global _whisper
+    from tts_whisper import WhisperTranscriber  # local import: optional feature
+
+    target = model_name or WHISPER_MODEL
+    with _whisper_lock:
+        if _whisper is None or _whisper.model_name != target:
+            if _whisper is not None:
+                _whisper.unload()
+            logger.info("Loading Whisper model: %s", target)
+            _whisper = WhisperTranscriber(target, device=DEVICE, dtype=DTYPE)
+        return _whisper
 
 
 # --------------------------------------------------------------------------- #
@@ -123,6 +156,12 @@ class BatchTTSResponse(BaseModel):
     audios: List[str]
     sample_rate: int
     method: str
+
+
+class TranscribeResponse(BaseModel):
+    text: str
+    model: str
+    language: str
 
 
 class FinetuneRequest(BaseModel):
@@ -211,12 +250,13 @@ def generate_custom_voice(req: CustomVoiceRequest):
             "or start the server with QWEN_TTS_CUSTOM set.",
         )
     try:
-        wavs, sr = models["custom"].generate_custom_voice(
-            text=req.text,
-            speaker=req.speaker,
-            language=req.language,
-            instruct=req.instruct or None,
-        )
+        with _GEN_LOCK:
+            wavs, sr = models["custom"].generate_custom_voice(
+                text=req.text,
+                speaker=req.speaker,
+                language=req.language,
+                instruct=req.instruct or None,
+            )
         return TTSResponse(audio_base64=_encode_wav(wavs[0]), sample_rate=sr, method="custom_voice")
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=str(exc))
@@ -230,12 +270,13 @@ def batch_generate_custom_voice(req: BatchCustomVoiceRequest):
         raise HTTPException(status_code=400, detail="texts must be non-empty")
     try:
         n = len(req.texts)
-        wavs, sr = models["custom"].generate_custom_voice(
-            text=req.texts,
-            speaker=[req.speaker] * n,
-            language=[req.language] * n,
-            instruct=[req.instruct] * n,
-        )
+        with _GEN_LOCK:
+            wavs, sr = models["custom"].generate_custom_voice(
+                text=req.texts,
+                speaker=[req.speaker] * n,
+                language=[req.language] * n,
+                instruct=[req.instruct] * n,
+            )
         return BatchTTSResponse(
             audios=[_encode_wav(w) for w in wavs], sample_rate=sr, method="custom_voice"
         )
@@ -251,11 +292,12 @@ def generate_voice_design(req: VoiceDesignRequest):
     if models["voice_design"] is None:
         raise HTTPException(status_code=503, detail="VoiceDesign model not loaded.")
     try:
-        wavs, sr = models["voice_design"].generate_voice_design(
-            text=req.text,
-            instruct=req.instruct,
-            language=req.language,
-        )
+        with _GEN_LOCK:
+            wavs, sr = models["voice_design"].generate_voice_design(
+                text=req.text,
+                instruct=req.instruct,
+                language=req.language,
+            )
         return TTSResponse(audio_base64=_encode_wav(wavs[0]), sample_rate=sr, method="voice_design")
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=str(exc))
@@ -282,19 +324,96 @@ async def generate_voice_clone(
             tmp.write(await ref_audio.read())
             tmp_path = tmp.name
 
-        wavs, sr = models["voice_clone"].generate_voice_clone(
-            text=text,
-            language=language,
-            ref_audio=tmp_path,
-            ref_text=ref_text,
-            x_vector_only_mode=x_vector_only_mode,
-        )
+        with _GEN_LOCK:
+            wavs, sr = models["voice_clone"].generate_voice_clone(
+                text=text,
+                language=language,
+                ref_audio=tmp_path,
+                ref_text=ref_text,
+                x_vector_only_mode=x_vector_only_mode,
+            )
         return TTSResponse(audio_base64=_encode_wav(wavs[0]), sample_rate=sr, method="voice_clone")
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=str(exc))
     finally:
         if tmp_path and os.path.exists(tmp_path):
             os.unlink(tmp_path)
+
+
+# --------------------------------------------------------------------------- #
+# Whisper auto-transcription (for VoiceClone reference text)
+# --------------------------------------------------------------------------- #
+@app.get("/whisper_models")
+def whisper_models():
+    """Selectable Whisper models (friendly name -> HuggingFace id)."""
+    from tts_whisper import WHISPER_MODEL_MAP
+
+    return {"default": WHISPER_MODEL, "models": list(WHISPER_MODEL_MAP.keys())}
+
+
+@app.post("/auto_transcribe", response_model=TranscribeResponse)
+async def auto_transcribe(
+    audio: UploadFile = File(...),
+    model: str = Form(""),
+    language: str = Form(""),
+):
+    """Transcribe an uploaded audio clip to text (for filling VoiceClone ref_text)."""
+    suffix = Path(audio.filename or "audio.wav").suffix or ".wav"
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+            tmp.write(await audio.read())
+            tmp_path = tmp.name
+
+        transcriber = _get_whisper(model or None)
+        with _GEN_LOCK:  # share the GPU lock with TTS generation
+            text = transcriber.transcribe(tmp_path, language=language or None)
+        return TranscribeResponse(
+            text=text, model=transcriber.model_name, language=language or "auto"
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=str(exc))
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+
+
+# --------------------------------------------------------------------------- #
+# GPU stats (for the Settings tab; torch-only, no extra deps)
+# --------------------------------------------------------------------------- #
+@app.get("/gpu_stats")
+def gpu_stats():
+    if not torch.cuda.is_available():
+        return {"available": False, "device": DEVICE}
+
+    idx = torch.cuda.current_device() if DEVICE.startswith("cuda") else 0
+    try:
+        free_b, total_b = torch.cuda.mem_get_info(idx)
+    except Exception:  # noqa: BLE001 - mem_get_info may be unavailable on some setups
+        free_b = total_b = 0
+    gib = 1024 ** 3
+    allocated_b = torch.cuda.memory_allocated(idx)
+    reserved_b = torch.cuda.memory_reserved(idx)
+    return {
+        "available": True,
+        "device": DEVICE,
+        "device_name": torch.cuda.get_device_name(idx),
+        "total_gb": round(total_b / gib, 2),
+        "free_gb": round(free_b / gib, 2),
+        "used_gb": round((total_b - free_b) / gib, 2),
+        "allocated_gb": round(allocated_b / gib, 2),
+        "reserved_gb": round(reserved_b / gib, 2),
+        "models_loaded": {k: v is not None for k, v in models.items()},
+        "whisper_loaded": _whisper.model_name if _whisper is not None else None,
+    }
+
+
+@app.post("/clear_gpu_cache")
+def clear_gpu_cache():
+    """Free cached (unallocated) VRAM. Does not unload models."""
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    return {"status": "ok"}
 
 
 # --------------------------------------------------------------------------- #
