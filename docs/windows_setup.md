@@ -344,8 +344,24 @@ tts.save_speech(audio, sr, "finetuned.wav")
 
 ---
 
+## Web UI を使う（推奨）
+
+API サーバーに加えて、ブラウザで使える **Gradio Web UI** があります。
+リポジトリ直下の **`Qwen3-TTS-Studio.bat`** をダブルクリックすれば、
+API サーバーと Web UI が自動で起動し、ブラウザが開きます。
+
+詳細は `docs/webui_setup.md` を参照。
+
+```powershell
+# 手動で UI を起動する場合（API サーバー起動後）
+python ui\launch_ui.py
+```
+
+---
+
 ## 次のステップ
 
+- Web UI ガイド: `docs/webui_setup.md`
 - API ドキュメント: `docs/api_server.md`
 - API サーバーコード: `server/tts_server_async.py`
 - クライアントコード: `server/tts_client_async.py`
@@ -357,6 +373,6 @@ tts.save_speech(audio, sr, "finetuned.wav")
 
 問題が発生した場合：
 
-1. `docs/api_server.md` の「Troubleshooting」を確認
+1. `docs/api_server.md` / `docs/webui_setup.md` の「Troubleshooting」を確認
 2. GitHub Issues を検索
-3. Flash Attention ホイールの互換性を確認
+3. GPU メモリ不足時は `QWEN_TTS_LOAD` でロードするモデルを絞る

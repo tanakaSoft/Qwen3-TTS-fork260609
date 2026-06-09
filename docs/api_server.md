@@ -145,6 +145,10 @@ python server\tts_server_async.py
 | POST | `/batch_generate_custom_voice` | CustomVoice, multiple texts in one call |
 | POST | `/generate_voice_design` | VoiceDesign from natural-language instruct |
 | POST | `/generate_voice_clone` | VoiceClone from uploaded reference clip |
+| POST | `/auto_transcribe` | Whisper transcription of an uploaded clip (fills VoiceClone ref_text) |
+| GET  | `/whisper_models` | List selectable Whisper models |
+| GET  | `/gpu_stats` | GPU/VRAM usage (for the Settings tab) |
+| POST | `/clear_gpu_cache` | Free cached VRAM (does not unload models) |
 | POST | `/finetune_async` | Start a background fine-tuning job |
 | GET  | `/finetune_status/{job_id}` | Poll a fine-tuning job |
 | GET  | `/finetune_jobs` | List all fine-tuning jobs |

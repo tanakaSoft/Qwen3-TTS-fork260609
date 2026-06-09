@@ -118,25 +118,39 @@ WSL2 での実行も可能です。Eager attention は両環境で同じ性能�
 ```
 Qwen3-TTS-fork260609/
 ├── README.md              # upstream のまま（変更しない）
+├── NOTICE                 # Apache-2.0 帰属表示（upstream + 参考アイデア）
 ├── FORK_CHANGES.md        # このファイル（変更記録）
+├── Qwen3-TTS-Studio.bat   # Windows ワンクリック起動（API+UI）
 ├── docs/
-│   └── api_server.md      # API サーバーの使い方
-├── server/                # 追加コード（元コードと分離）
-│   ├── tts_server_async.py     # 非同期 TTS + ファインチューニング API
+│   ├── windows_setup.md   # Windows セットアップ手順
+│   ├── api_server.md      # API サーバーの使い方
+│   └── webui_setup.md     # Web UI の使い方
+├── server/                # 追加コード: API サーバー（元コードと分離）
+│   ├── tts_server_async.py     # 非同期 TTS + ファインチューニング + Whisper API
 │   ├── tts_client_async.py     # クライアントライブラリ
+│   ├── tts_whisper.py          # transformers Whisper ラッパー（追加native依存なし）
 │   └── requirements-server.txt # 追加依存（fastapi, uvicorn 等）
-└── qwen_tts/              # upstream パッケージ（改変は最小限）
+├── ui/                    # 追加コード: Gradio Web UI（API の薄いクライアント）
+│   ├── app.py / launch_ui.py   # UI 構築・起動（ポート自動選択・ブラウザ自動起動）
+│   ├── i18n.py / config.py / client.py
+│   └── tabs/                    # Custom / Design / Clone / Settings の4タブ
+└── qwen_tts/              # upstream パッケージ（改変ゼロ）
 ```
 
 ### 追加した機能
 
-- **非同期 API サーバー**: WSL2 上で常駐し、Windows / WSL2 の複数アプリから HTTP 経由で利用
+- **常駐 API サーバー**: モデルを1回だけGPUにロードし、同一PCの複数アプリから HTTP 経由で共有
 - **対応する生成方式**:
   - CustomVoice（ファインチューニング済みモデル）
   - Voice Design（自然言語での音声デザイン）
   - Voice Clone（参考音声からのクローン）
+- **Whisper 自動文字起こし**: 参照音声からテキストを自動生成（VoiceClone の ref_text 自動入力）。
+  transformers 実装で追加 native 依存なし（ffmpeg / CTranslate2 / cuDNN 不要）
+- **Gradio Web UI**: 4タブ + 10言語 UI。API の薄いクライアントとして動作（モデルは二重ロードしない）
+- **GPU メトリクス**: 設定タブで VRAM 使用状況を定期更新表示、キャッシュ解放
 - **ファインチューニング API**: バックグラウンドジョブとして実行し、完了後そのまま音声生成に利用
 - **バッチ処理**: 複数テキストの一括音声生成
+- **単一GPUの直列化**: UI と他アプリの同時アクセスでも GPU を排他制御（生成ロック）
 
 ---
 
@@ -159,18 +173,35 @@ Qwen3-TTS-fork260609/
   （Windows / WSL2 / 他マシンから利用可能）。
 - `server/requirements-server.txt` を追加。API サーバー用の追加依存（fastapi 等）。
 
+#### Whisper / Web UI Implementation
+
+- `server/tts_whisper.py` を追加。transformers ベースの Whisper ラッパー。
+  5モデル選択可（tiny〜large-v3、既定 large-v3）、遅延ロード、librosa で音声デコード
+  （ffmpeg 不要）。追加 pip/native 依存ゼロ。
+- `server/tts_server_async.py` に `/auto_transcribe` `/whisper_models`
+  `/gpu_stats` `/clear_gpu_cache` を追加。全 GPU 処理を単一ロックで直列化。
+  `QWEN_TTS_ATTN` 既定を `eager` に修正（ドキュメントと一致）。
+- `server/tts_client_async.py` に `auto_transcribe` / `gpu_stats` /
+  `clear_gpu_cache` / `whisper_models` メソッドを追加。
+- `ui/` 一式を追加。Gradio Web UI（API の薄いクライアント、モデル二重ロードなし）。
+  4タブ（Custom/Design/Clone/Settings）、10言語 i18n、ポート自動選択・ブラウザ自動起動。
+- `Qwen3-TTS-Studio.bat` を追加。Windows ワンクリック起動（API→/health待機→UI→ブラウザ）。
+- `NOTICE` を追加。Apache-2.0 帰属表示（upstream Qwen3-TTS + Qwen3-TTS-JP のアイデア）。
+
 #### Documentation
 
-- `docs/windows_setup.md` を新規作成。Windows PowerShell での ステップバイステップセットアップガイド（11 ステップ）。
+- `docs/windows_setup.md` を新規作成。Windows PowerShell での ステップバイステップセットアップガイド。
   Eager attention デフォルト。Flash Attention 2 は推奨しない（非公式ホイール、保守リスク）。
 - `docs/api_server.md` を新規作成。API リファレンス・使い方。
-  - Windows PowerShell と WSL2 bash の両対応。
-  - モデルキャッシュ位置、エンドポイント、クライアント使用法、ファインチューニングワークフロー、トラブルシューティング。
-  - Eager attention デフォルト（公式サポート、メモリ効率 12-14GB）。
+- `docs/webui_setup.md` を新規作成。Web UI の使い方（ワンクリック起動・4タブ・多言語・他アプリ連携）。
 
 #### Implementation Notes
 
-- `qwen_tts/` 本体への変更なし。
-- 設計方針：Eager attention 標準（Windows・WSL2 共通）
-  - RTX 5090 32GB なら eager で十分（全モデルロード可能）
-  - Flash Attention 2 非公式ホイールは保守リスク大のため採用しない
+- `qwen_tts/` 本体への変更なし（`git diff fork-original HEAD` は新規ファイルのみ）。
+- 設計方針：Eager attention 標準。Whisper も transformers 実装で native 依存を回避。
+  - RTX 5090 32GB なら eager + 全モデル + Whisper でも十分
+  - 非公式 native 依存（FA2 ホイール / faster-whisper の cuDNN 等）は保守リスク大のため不採用
+- アーキテクチャ：API サーバーが唯一のモデル所有者。UI も他アプリも同じ HTTP API を利用。
+  - UI は API を使う＝API 品質を常時検証（ドッグフーディング）
+- UI のランタイム挙動（Gradio 描画 / gr.Timer / ルートマウント / 言語切替）は
+  ローカル（Windows+GPU）での実機検証が必要（このクラウド環境では構文チェックのみ）。
