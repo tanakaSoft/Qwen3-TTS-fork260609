@@ -43,22 +43,22 @@ git checkout origin/main
 
 ---
 
-## 追加予定の構成
+## 構成
 
 ```
 Qwen3-TTS-fork260609/
 ├── README.md              # upstream のまま（変更しない）
 ├── FORK_CHANGES.md        # このファイル（変更記録）
 ├── docs/
-│   └── api_server.md      # API サーバーの使い方（予定）
+│   └── api_server.md      # API サーバーの使い方
 ├── server/                # 追加コード（元コードと分離）
-│   ├── tts_server_async.py    # 非同期 TTS + ファインチューニング API（予定）
-│   ├── tts_client_async.py    # クライアントライブラリ（予定）
-│   └── requirements-server.txt # 追加依存（fastapi, uvicorn 等）（予定）
+│   ├── tts_server_async.py     # 非同期 TTS + ファインチューニング API
+│   ├── tts_client_async.py     # クライアントライブラリ
+│   └── requirements-server.txt # 追加依存（fastapi, uvicorn 等）
 └── qwen_tts/              # upstream パッケージ（改変は最小限）
 ```
 
-### 追加予定の機能
+### 追加した機能
 
 - **非同期 API サーバー**: WSL2 上で常駐し、Windows / WSL2 の複数アプリから HTTP 経由で利用
 - **対応する生成方式**:
@@ -75,3 +75,10 @@ Qwen3-TTS-fork260609/
 ### [Unreleased]
 
 - `FORK_CHANGES.md` を新規作成。フォークの変更管理方針と復元ポイントを記録。
+- `server/tts_server_async.py` を追加。CustomVoice / VoiceDesign / VoiceClone の
+  生成と、非同期ファインチューニング（バックグラウンドジョブ）を提供する FastAPI サーバー。
+- `server/tts_client_async.py` を追加。torch 不要の軽量 HTTP クライアント
+  （Windows / 他の WSL2 アプリから利用可能）。
+- `server/requirements-server.txt` を追加。API サーバー用の追加依存（fastapi 等）。
+- `docs/api_server.md` を追加。サーバーの起動方法・環境変数・エンドポイント・利用例を記載。
+- `qwen_tts/` 本体への変更なし。
