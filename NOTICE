@@ -1,0 +1,20 @@
+Qwen3-TTS-fork260609
+====================
+
+This product is a fork of Qwen3-TTS by the Alibaba Qwen team, licensed under
+the Apache License, Version 2.0 (see LICENSE).
+
+    Qwen3-TTS
+    Copyright 2026 The Alibaba Qwen team.
+    https://github.com/QwenLM/Qwen3-TTS
+
+Fork additions (under server/, ui/, docs/) are likewise licensed under the
+Apache License, Version 2.0.
+
+The Web UI design — a multilingual Gradio interface, Whisper auto-transcription
+for the Voice Clone workflow, a GPU/Settings tab, and a one-click Windows
+launcher — was inspired by the following Apache-2.0 project. No source files
+were copied verbatim; the ideas were re-implemented independently under ui/:
+
+    Qwen3-TTS-JP (Japanese GUI + Whisper auto-transcription)
+    https://github.com/hiroki-abe-58/Qwen3-TTS-JP
