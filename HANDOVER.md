@@ -14,6 +14,7 @@ is a *thin client* over that API. Other apps on the same PC call the same API.
 ```
   API server (:8001)  ── loads models ONCE on the GPU
      ├ /generate_voice_design / _voice_clone / _custom_voice
+     ├ /custom_models / load_custom_model  (pick fine-tuned or preset)
      ├ /auto_transcribe  (Whisper, fills VoiceClone ref_text)
      ├ /gpu_stats /clear_gpu_cache
      └ /finetune_async ...
@@ -110,6 +111,18 @@ python ui\launch_ui.py
       playback. If not, set `gr.Audio(type="numpy")` expectations accordingly.
 - [ ] Voice Clone: upload WAV → "Auto Transcribe" fills ref text → "Generate".
 
+### CustomVoice model picker (new)
+- [ ] Custom Voice tab: "Refresh" lists fine-tuned models under `outputs/` plus
+      the official preset; "Load" loads the selected model.
+- [ ] `GET /custom_models` returns the list + currently-loaded path.
+- [ ] `POST /load_custom_model` loads the **official preset**
+      (`Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice`) — first load downloads from HF.
+- [ ] **VRAM swap**: loading a new model frees the old one first
+      (`models["custom"]=None; gc; empty_cache`). Confirm no OOM on RTX 5090
+      when switching between models.
+- [ ] After load, the speaker dropdown is populated from the model's preset
+      speakers (`get_supported_speakers`). Generation with a preset speaker works.
+
 ### Multi-app / API reuse
 - [ ] From a separate Python process, `QwenTTSAsyncClient("http://localhost:8001")`
       connects and generates while the UI is also running (lock serializes GPU).
@@ -123,6 +136,8 @@ python ui\launch_ui.py
 | Gradio version API | `ui/app.py`, `ui/tabs/settings.py` | `gr.Timer`, JS `.change`, route mounting may differ by version |
 | transformers ASR call | `server/tts_whisper.py` | `generate_kwargs` / raw-array input signature |
 | Audio tuple format | `ui/tabs/*.py` | Gradio expects `(sr, ndarray)` for numpy audio |
+| CustomVoice VRAM swap | `server/tts_server_async.py` `load_custom_model` | free-then-load to avoid OOM; confirm on real GPU |
+| Dropdown dynamic update | `ui/tabs/custom_voice.py` | `gr.update(choices=...)` for speaker/model dropdowns |
 | `.bat` health wait | `Qwen3-TTS-Studio.bat` | PowerShell `Invoke-RestMethod` availability/policy |
 
 ---
