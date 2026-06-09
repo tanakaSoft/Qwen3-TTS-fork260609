@@ -43,6 +43,46 @@ git checkout origin/main
 
 ---
 
+## upstream（本家）追従戦略
+
+本家 [QwenLM/Qwen3-TTS](https://github.com/QwenLM/Qwen3-TTS) の更新を取り込めるよう、
+`upstream` リモートを設定済み。
+
+```bash
+# 設定（一度だけ）
+git remote add upstream https://github.com/QwenLM/Qwen3-TTS.git
+```
+
+### 追従の鉄則：`qwen_tts/` を絶対に触らない
+
+本フォークの追加コードは **すべて `server/` `ui/` `docs/` に隔離** されており、
+upstream パッケージ本体 `qwen_tts/` への変更は **ゼロ**。
+この分離を守る限り、本家更新は **コンフリクトなしでマージ可能**。
+
+| 確認項目 | 状態 |
+|---|---|
+| `qwen_tts/` への変更 | なし（`git diff fork-original HEAD` で新規ファイルのみ） |
+| 本家 Gradio demo (`qwen_tts/cli/demo.py`) | upstream のまま保持（改変せず、`ui/` に独自実装） |
+
+### 本家更新の取り込み手順
+
+```bash
+# 1. 本家の最新を取得
+git fetch upstream
+
+# 2. main を本家に追従（クリーンな fast-forward / merge）
+git checkout main
+git merge upstream/main
+git push origin main
+
+# 3. 開発ブランチに反映
+git checkout claude/qwen3-tts-finetuning-6lixq8
+git merge main
+# server/ ui/ は独自コードなので衝突しない。qwen_tts/ は upstream と同期。
+```
+
+---
+
 ## 実装環境
 
 ### **推奨：Windows ネイティブ + RTX 5090 + Eager Attention**
