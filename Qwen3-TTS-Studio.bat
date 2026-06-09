@@ -20,8 +20,9 @@ set "API_URL=http://%API_HOST%:%API_PORT%"
 REM --- Activate virtual environment ------------------------------------------
 if not exist "%VENV_ACTIVATE%" (
   echo [ERROR] venv not found at "%VENV_ACTIVATE%"
-  echo         Create it first (see docs\windows_setup.md):
-  echo           uv venv --python 3.12 ^&^& uv pip install -e .
+  echo         Create it first - see docs\windows_setup.md:
+  echo           uv venv --python 3.12
+  echo           uv pip install -e .
   pause
   exit /b 1
 )
