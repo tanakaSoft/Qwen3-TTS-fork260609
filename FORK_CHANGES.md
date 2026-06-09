@@ -189,6 +189,11 @@ Qwen3-TTS-fork260609/
 - `ui/tabs/finetune.py` を追加。ブラウザからファインチューニングを開始し、進捗を
   5秒ごとに自動更新表示。完了後そのままカスタムボイスとして利用可能。
   `server/tts_client_async.py` に `list_finetune_jobs` メソッドを追加。
+- CustomVoice モデル選択機能を追加。`/custom_models`（一覧）と `/load_custom_model`
+  （ロード）エンドポイント、クライアントの `list_custom_models` / `load_custom_model`、
+  カスタムボイスタブのモデル選択 UI。`outputs/` のファインチューニング済みモデルと
+  公式プリセット（`Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice`）をドロップダウンから選んで
+  ロード可能。ロード後は話者ドロップダウンをプリセット話者で更新。
 - `FORK_README.md` を新規作成。フォークのエントリーポイント（概要・特徴・クイック
   スタート・5タブ・API 利用例）。`README.md` は upstream のまま保持。
 - `Qwen3-TTS-Studio.bat` を追加。Windows ワンクリック起動（API→/health待機→UI→ブラウザ）。

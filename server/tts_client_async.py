@@ -52,6 +52,18 @@ class QwenTTSAsyncClient:
     def whisper_models(self) -> dict:
         return requests.get(f"{self.server_url}/whisper_models", timeout=10).json()
 
+    def list_custom_models(self) -> dict:
+        return requests.get(f"{self.server_url}/custom_models", timeout=10).json()
+
+    def load_custom_model(self, model: str) -> dict:
+        resp = requests.post(
+            f"{self.server_url}/load_custom_model",
+            json={"model": model},
+            timeout=self.timeout,
+        )
+        self._raise_for_status(resp)
+        return resp.json()
+
     # ------------------------------------------------------------------ #
     # Generation
     # ------------------------------------------------------------------ #

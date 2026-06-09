@@ -141,8 +141,10 @@ python server\tts_server_async.py
 | GET  | `/health` | Server + model status |
 | GET  | `/supported_speakers` | Speaker list (for CustomVoice) |
 | GET  | `/supported_languages` | Language list |
-| POST | `/generate_custom_voice` | CustomVoice (fine-tuned model) generation |
+| POST | `/generate_custom_voice` | CustomVoice (fine-tuned or preset model) generation |
 | POST | `/batch_generate_custom_voice` | CustomVoice, multiple texts in one call |
+| GET  | `/custom_models` | List loadable CustomVoice models (fine-tuned + official preset) |
+| POST | `/load_custom_model` | Load a fine-tuned checkpoint or preset model as the active CustomVoice model |
 | POST | `/generate_voice_design` | VoiceDesign from natural-language instruct |
 | POST | `/generate_voice_clone` | VoiceClone from uploaded reference clip |
 | POST | `/auto_transcribe` | Whisper transcription of an uploaded clip (fills VoiceClone ref_text) |

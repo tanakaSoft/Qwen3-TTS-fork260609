@@ -14,6 +14,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 import base64
+import gc
 import logging
 import os
 import subprocess
@@ -53,6 +54,11 @@ BASE_MODEL = os.environ.get("QWEN_TTS_BASE", "Qwen/Qwen3-TTS-12Hz-1.7B-Base")
 VOICE_DESIGN_MODEL = os.environ.get("QWEN_TTS_VOICE_DESIGN", "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign")
 # Optional fine-tuned CustomVoice checkpoint to load at startup (may not exist yet).
 CUSTOM_MODEL = os.environ.get("QWEN_TTS_CUSTOM", "")
+# Official pretrained CustomVoice model (preset speakers). Selectable from the UI
+# but not auto-loaded; downloaded from HuggingFace on first load.
+CUSTOM_PRESET_MODEL = os.environ.get(
+    "QWEN_TTS_CUSTOM_PRESET", "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice"
+)
 
 # Which models to load at startup. Loading all three needs ~10GB VRAM; on smaller
 # GPUs set e.g. QWEN_TTS_LOAD="voice_clone" to load a single model.
@@ -73,6 +79,9 @@ models: Dict[str, Optional[Qwen3TTSModel]] = {
     "voice_design": None,
     "voice_clone": None,
 }
+
+# Path/id of the currently loaded CustomVoice model (for /custom_models display).
+_loaded_custom_path: Optional[str] = None
 
 # Single GPU: serialize all generation/transcription so concurrent clients
 # (the Web UI plus any other app on the machine) never run the model in
@@ -164,6 +173,12 @@ class TranscribeResponse(BaseModel):
     language: str
 
 
+class LoadCustomModelRequest(BaseModel):
+    # A fine-tuned checkpoint path (under outputs/) or a HuggingFace model id
+    # (e.g. the official preset CustomVoice model).
+    model: str
+
+
 class FinetuneRequest(BaseModel):
     # Path to a RAW jsonl (audio/text/ref_audio); prepare_data.py is run automatically.
     train_jsonl: str
@@ -197,8 +212,10 @@ def startup_event():
 
     if "custom" in LOAD_MODELS:
         if CUSTOM_MODEL and Path(CUSTOM_MODEL).exists():
+            global _loaded_custom_path
             logger.info("  - CustomVoice (fine-tuned): %s", CUSTOM_MODEL)
             models["custom"] = _load_model(CUSTOM_MODEL)
+            _loaded_custom_path = CUSTOM_MODEL
         else:
             logger.warning(
                 "  - CustomVoice not loaded (set QWEN_TTS_CUSTOM to a checkpoint, "
@@ -281,6 +298,83 @@ def batch_generate_custom_voice(req: BatchCustomVoiceRequest):
             audios=[_encode_wav(w) for w in wavs], sample_rate=sr, method="custom_voice"
         )
     except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+# --------------------------------------------------------------------------- #
+# CustomVoice model management (list / load fine-tuned or preset models)
+# --------------------------------------------------------------------------- #
+def _list_finetuned_models() -> List[Dict]:
+    """Scan outputs/ for fine-tuned checkpoints (latest epoch per model dir)."""
+    out_root = REPO_ROOT / "outputs"
+    found: List[Dict] = []
+    if not out_root.exists():
+        return found
+    for model_dir in sorted(p for p in out_root.iterdir() if p.is_dir()):
+        checkpoints = list(model_dir.glob("checkpoint-epoch-*"))
+        if not checkpoints:
+            continue
+        # Pick the highest epoch number as the representative checkpoint.
+        def _epoch(p: Path) -> int:
+            try:
+                return int(p.name.rsplit("-", 1)[-1])
+            except ValueError:
+                return -1
+        latest = max(checkpoints, key=_epoch)
+        found.append(
+            {
+                "name": f"{model_dir.name} (epoch {_epoch(latest)})",
+                "path": str(latest),
+                "type": "finetuned",
+            }
+        )
+    return found
+
+
+@app.get("/custom_models")
+def custom_models():
+    """List loadable CustomVoice models: fine-tuned checkpoints + official preset."""
+    items = _list_finetuned_models()
+    items.append(
+        {
+            "name": "Official CustomVoice (preset speakers)",
+            "path": CUSTOM_PRESET_MODEL,
+            "type": "preset",
+        }
+    )
+    return {"models": items, "loaded": _loaded_custom_path}
+
+
+@app.post("/load_custom_model")
+def load_custom_model(req: LoadCustomModelRequest):
+    """Load a fine-tuned checkpoint or preset model as the active CustomVoice model."""
+    global _loaded_custom_path
+    target = req.model.strip()
+    if not target:
+        raise HTTPException(status_code=400, detail="model must be non-empty")
+    # Local paths must exist; HF ids (with '/') are downloaded on demand.
+    is_local = ("/" in target or "\\" in target) and Path(target).exists()
+    looks_like_hf_id = target.count("/") == 1 and not Path(target).exists()
+    if not is_local and not looks_like_hf_id:
+        raise HTTPException(status_code=400, detail=f"model not found: {target}")
+    try:
+        with _GEN_LOCK:
+            # Free the current model first to reduce peak VRAM during the swap.
+            models["custom"] = None
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            models["custom"] = _load_model(target)
+            _loaded_custom_path = target
+        speakers = None
+        try:
+            speakers = models["custom"].get_supported_speakers()
+        except Exception:  # noqa: BLE001 - not all models expose preset speakers
+            speakers = None
+        logger.info("CustomVoice model loaded: %s", target)
+        return {"status": "ok", "loaded": target, "speakers": speakers}
+    except Exception as exc:  # noqa: BLE001
+        _loaded_custom_path = None
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -491,7 +585,10 @@ def _run_finetune_task(job_id: str, req: FinetuneRequest):
         checkpoint = output_dir / f"checkpoint-epoch-{req.num_epochs - 1}"
         if not checkpoint.exists():
             raise FileNotFoundError(f"checkpoint not found: {checkpoint}")
-        models["custom"] = _load_model(str(checkpoint))
+        global _loaded_custom_path
+        with _GEN_LOCK:
+            models["custom"] = _load_model(str(checkpoint))
+            _loaded_custom_path = str(checkpoint)
 
         update(
             status="completed",
