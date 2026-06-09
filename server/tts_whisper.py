@@ -83,14 +83,16 @@ class WhisperTranscriber:
 
         waveform, _ = librosa.load(audio_path, sr=16000, mono=True)
 
-        generate_kwargs = {}
+        # transformers 4.57 iterates generate_kwargs, so passing None (when no
+        # language is forced / auto-detect) raises TypeError — omit it instead.
+        extra = {}
         lang = _resolve_language(language)
         if lang is not None:
-            generate_kwargs["language"] = lang
+            extra["generate_kwargs"] = {"language": lang}
         result = self._pipe(
             {"raw": waveform, "sampling_rate": 16000},
-            generate_kwargs=generate_kwargs or None,
             return_timestamps=False,
+            **extra,
         )
         return (result.get("text") or "").strip()
 
