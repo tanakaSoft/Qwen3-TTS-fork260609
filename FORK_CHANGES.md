@@ -118,6 +118,7 @@ WSL2 での実行も可能です。Eager attention は両環境で同じ性能�
 ```
 Qwen3-TTS-fork260609/
 ├── README.md              # upstream のまま（変更しない）
+├── FORK_README.md         # フォークのエントリーポイント（概要・使い方）
 ├── NOTICE                 # Apache-2.0 帰属表示（upstream + 参考アイデア）
 ├── FORK_CHANGES.md        # このファイル（変更記録）
 ├── Qwen3-TTS-Studio.bat   # Windows ワンクリック起動（API+UI）
@@ -133,7 +134,7 @@ Qwen3-TTS-fork260609/
 ├── ui/                    # 追加コード: Gradio Web UI（API の薄いクライアント）
 │   ├── app.py / launch_ui.py   # UI 構築・起動（ポート自動選択・ブラウザ自動起動）
 │   ├── i18n.py / config.py / client.py
-│   └── tabs/                    # Custom / Design / Clone / Settings の4タブ
+│   └── tabs/                    # Custom / Design / Clone / Fine-tuning / Settings の5タブ
 └── qwen_tts/              # upstream パッケージ（改変ゼロ）
 ```
 
@@ -184,7 +185,12 @@ Qwen3-TTS-fork260609/
 - `server/tts_client_async.py` に `auto_transcribe` / `gpu_stats` /
   `clear_gpu_cache` / `whisper_models` メソッドを追加。
 - `ui/` 一式を追加。Gradio Web UI（API の薄いクライアント、モデル二重ロードなし）。
-  4タブ（Custom/Design/Clone/Settings）、10言語 i18n、ポート自動選択・ブラウザ自動起動。
+  5タブ（Custom/Design/Clone/Fine-tuning/Settings）、10言語 i18n、ポート自動選択・ブラウザ自動起動。
+- `ui/tabs/finetune.py` を追加。ブラウザからファインチューニングを開始し、進捗を
+  5秒ごとに自動更新表示。完了後そのままカスタムボイスとして利用可能。
+  `server/tts_client_async.py` に `list_finetune_jobs` メソッドを追加。
+- `FORK_README.md` を新規作成。フォークのエントリーポイント（概要・特徴・クイック
+  スタート・5タブ・API 利用例）。`README.md` は upstream のまま保持。
 - `Qwen3-TTS-Studio.bat` を追加。Windows ワンクリック起動（API→/health待機→UI→ブラウザ）。
 - `NOTICE` を追加。Apache-2.0 帰属表示（upstream Qwen3-TTS + Qwen3-TTS-JP のアイデア）。
 

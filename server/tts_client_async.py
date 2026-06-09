@@ -153,6 +153,11 @@ class QwenTTSAsyncClient:
         self._raise_for_status(resp)
         return resp.json()
 
+    def list_finetune_jobs(self) -> dict:
+        resp = requests.get(f"{self.server_url}/finetune_jobs", timeout=10)
+        self._raise_for_status(resp)
+        return resp.json()
+
     def wait_finetune_completion(
         self, job_id: str, check_interval: float = 10.0, verbose: bool = True,
     ) -> dict:

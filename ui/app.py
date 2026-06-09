@@ -16,6 +16,7 @@ from ui.i18n import LANGUAGES, normalize_lang, t
 from ui.tabs.custom_voice import create_custom_voice_tab
 from ui.tabs.voice_design import create_voice_design_tab
 from ui.tabs.voice_clone import create_voice_clone_tab
+from ui.tabs.finetune import create_finetune_tab
 from ui.tabs.settings import create_settings_tab
 
 
@@ -40,6 +41,8 @@ def build_blocks(lang: str) -> gr.Blocks:
                 create_voice_design_tab(lang)
             with gr.Tab(t(lang, "tab_clone")):
                 create_voice_clone_tab(lang)
+            with gr.Tab(t(lang, "tab_finetune")):
+                create_finetune_tab(lang)
             with gr.Tab(t(lang, "tab_settings")):
                 create_settings_tab(lang)
 

@@ -96,7 +96,9 @@ python ui\launch_ui.py
 
 ### Web UI (the most likely place to need fixes — untestable in cloud)
 - [ ] UI launches; browser opens at `/ja`.
-- [ ] All 4 tabs render. Custom / Design / Clone / Settings.
+- [ ] All 5 tabs render. Custom / Design / Clone / Fine-tuning / Settings.
+- [ ] Fine-tuning tab: start a small job, progress auto-polls (gr.Timer),
+      completed model becomes usable in the Custom Voice tab.
 - [ ] **Language selector** switches routes (`/ja` ↔ `/en` …). This relies on
       `gr.mount_gradio_app(...)` per language + a JS navigation in `ui/app.py`.
       If the JS `.change(fn=None, js=...)` form errors on your Gradio version,
