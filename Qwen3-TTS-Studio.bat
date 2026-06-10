@@ -17,6 +17,14 @@ set "API_HOST=127.0.0.1"
 set "API_PORT=8001"
 set "API_URL=http://%API_HOST%:%API_PORT%"
 
+REM --- Banner: explain what this window does ----------------------------------
+echo ============================================================
+echo  QWEN3-TTS STUDIO LAUNCHER -- this window
+echo  Role  : starts the API server, then runs the Web UI here
+echo  URL   : http://%API_HOST%:7860/ja  -  or next free port
+echo  Note  : keep this window open. Closing it stops the Web UI.
+echo ============================================================
+
 REM --- Activate virtual environment ------------------------------------------
 if not exist "%VENV_ACTIVATE%" (
   echo [ERROR] venv not found at "%VENV_ACTIVATE%"
