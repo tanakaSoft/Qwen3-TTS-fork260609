@@ -32,7 +32,7 @@ REM --- 1) Start the API server in a separate window --------------------------
 echo [Qwen3-TTS] Starting API server on %API_URL% ...
 set "QWEN_TTS_HOST=%API_HOST%"
 set "QWEN_TTS_PORT=%API_PORT%"
-start "Qwen3-TTS API" cmd /k "call ""%VENV_ACTIVATE%"" && python ""%REPO_DIR%server\tts_server_async.py"""
+start "Qwen3-TTS API" cmd /k "echo ============================================================ && echo  QWEN3-TTS API SERVER -- this window && echo  Role  : loads the TTS models on the GPU and serves the API && echo  URL   : %API_URL%  -  docs at %API_URL%/docs && echo  Note  : keep this window open. Closing it stops the API. && echo ============================================================ && call ""%VENV_ACTIVATE%"" && python ""%REPO_DIR%server\tts_server_async.py"""
 
 REM --- 2) Wait until the API server is healthy --------------------------------
 echo [Qwen3-TTS] Waiting for the API server to load models...
