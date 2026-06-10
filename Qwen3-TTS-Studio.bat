@@ -17,14 +17,6 @@ set "API_HOST=127.0.0.1"
 set "API_PORT=8001"
 set "API_URL=http://%API_HOST%:%API_PORT%"
 
-REM --- Banner: explain what this window does ----------------------------------
-echo ============================================================
-echo  QWEN3-TTS STUDIO LAUNCHER -- this window
-echo  Role  : starts the API server, then runs the Web UI here
-echo  URL   : http://%API_HOST%:7860/ja  -  or next free port
-echo  Note  : keep this window open. Closing it stops the Web UI.
-echo ============================================================
-
 REM --- Activate virtual environment ------------------------------------------
 if not exist "%VENV_ACTIVATE%" (
   echo [ERROR] venv not found at "%VENV_ACTIVATE%"
@@ -36,11 +28,21 @@ if not exist "%VENV_ACTIVATE%" (
 )
 call "%VENV_ACTIVATE%"
 
+REM --- Banner: explain what this window does ----------------------------------
+REM (must come AFTER activate.bat: its chcp codepage switch clears the screen)
+echo ============================================================
+echo  QWEN3-TTS STUDIO LAUNCHER -- this window
+echo  Role  : starts the API server, then runs the Web UI here
+echo  URL   : http://%API_HOST%:7860/ja  -  or next free port
+echo  Note  : keep this window open. Closing it stops the Web UI.
+echo ============================================================
+
 REM --- 1) Start the API server in a separate window --------------------------
 echo [Qwen3-TTS] Starting API server on %API_URL% ...
 set "QWEN_TTS_HOST=%API_HOST%"
 set "QWEN_TTS_PORT=%API_PORT%"
-start "Qwen3-TTS API" cmd /k "echo ============================================================ && echo  QWEN3-TTS API SERVER -- this window && echo  Role  : loads the TTS models on the GPU and serves the API && echo  URL   : %API_URL%  -  docs at %API_URL%/docs && echo  Note  : keep this window open. Closing it stops the API. && echo ============================================================ && call ""%VENV_ACTIVATE%"" && python ""%REPO_DIR%server\tts_server_async.py"""
+REM (banner comes AFTER activate.bat: its chcp codepage switch clears the screen)
+start "Qwen3-TTS API" cmd /k "call ""%VENV_ACTIVATE%"" && echo ============================================================ && echo  QWEN3-TTS API SERVER -- this window && echo  Role  : loads the TTS models on the GPU and serves the API && echo  URL   : %API_URL%  -  docs at %API_URL%/docs && echo  Note  : keep this window open. Closing it stops the API. && echo ============================================================ && python ""%REPO_DIR%server\tts_server_async.py"""
 
 REM --- 2) Wait until the API server is healthy --------------------------------
 echo [Qwen3-TTS] Waiting for the API server to load models...
