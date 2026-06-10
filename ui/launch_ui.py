@@ -50,6 +50,17 @@ def build_app() -> FastAPI:
     def _root():
         return RedirectResponse(url=f"/{default_lang}")
 
+    # Browsers request a PWA manifest at the site root; without this stub every
+    # page load logs a 404 (Gradio is mounted under /<lang>, not /).
+    @app.get("/manifest.json", include_in_schema=False)
+    def _manifest():
+        return {
+            "name": "Qwen3-TTS Studio",
+            "short_name": "Qwen3-TTS",
+            "start_url": f"/{default_lang}",
+            "display": "browser",
+        }
+
     for code in LANGUAGES:
         app = gr.mount_gradio_app(app, build_blocks(code), path=f"/{code}")
     return app

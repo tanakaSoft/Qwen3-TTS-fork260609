@@ -66,6 +66,8 @@ _EN = {
                "server (one at a time); when it finishes, the model becomes the "
                "active Custom Voice model.",
     "ft_train_jsonl": "Training data (JSONL path on the server)",
+    "ft_upload": "…or upload a JSONL file (audio paths inside must be on this PC)",
+    "ft_uploaded": "Uploaded to the server",
     "ft_model_name": "Output model name",
     "ft_speaker_name": "Speaker name",
     "ft_epochs": "Epochs",
@@ -134,6 +136,8 @@ _TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "ft_help": "独自データから CustomVoice モデルを学習します。ジョブはサーバー側で"
                    "（同時に1件ずつ）実行され、完了するとカスタムボイスとして使えます。",
         "ft_train_jsonl": "学習データ（サーバー上の JSONL パス）",
+        "ft_upload": "…または JSONL をアップロード（中の音声パスはこの PC 上のものが必要）",
+        "ft_uploaded": "サーバーへアップロードしました",
         "ft_model_name": "出力モデル名",
         "ft_speaker_name": "話者名",
         "ft_epochs": "エポック数",

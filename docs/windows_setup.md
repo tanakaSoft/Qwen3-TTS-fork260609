@@ -182,7 +182,7 @@ $env:HF_HOME = "D:\models\huggingface"
 python server\tts_server_async.py
 
 # 出力例:
-# INFO:     Uvicorn running on http://0.0.0.0:8001
+# INFO:     Uvicorn running on http://127.0.0.1:8001
 # 🚀 Qwen3-TTS モデルをロード中...
 #   1. VoiceDesign: Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign
 #   2. VoiceClone (Base): Qwen/Qwen3-TTS-12Hz-1.7B-Base

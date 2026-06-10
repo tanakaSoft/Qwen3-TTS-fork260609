@@ -15,6 +15,7 @@
 # SPDX-License-Identifier: Apache-2.0
 import base64
 import gc
+import json
 import logging
 import os
 import subprocess
@@ -22,6 +23,7 @@ import sys
 import tempfile
 import threading
 import uuid
+from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -67,10 +69,17 @@ LOAD_MODELS = os.environ.get("QWEN_TTS_LOAD", "voice_design,voice_clone,custom")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("qwen_tts_server")
 
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    _startup()
+    yield
+
+
 app = FastAPI(
     title="Qwen3-TTS Async Server (fork)",
     description="CustomVoice / VoiceDesign / VoiceClone generation + async fine-tuning.",
     version="1.0",
+    lifespan=_lifespan,
 )
 
 # Loaded models, keyed by role. None means "not loaded".
@@ -196,10 +205,10 @@ class FinetuneJobResponse(BaseModel):
 
 
 # --------------------------------------------------------------------------- #
-# Startup
+# Startup (called from the FastAPI lifespan handler defined above)
 # --------------------------------------------------------------------------- #
-@app.on_event("startup")
-def startup_event():
+def _startup():
+    _restore_finetune_jobs()
     logger.info("Loading Qwen3-TTS models (%s)...", ", ".join(LOAD_MODELS))
 
     if "voice_design" in LOAD_MODELS:
@@ -513,6 +522,48 @@ def clear_gpu_cache():
 # --------------------------------------------------------------------------- #
 # Fine-tuning (async background job)
 # --------------------------------------------------------------------------- #
+def _persist_job(job: Dict) -> None:
+    """Write the job dict to outputs/<model>/job.json so it survives restarts."""
+    out_dir = job.get("output_dir")
+    if not out_dir:
+        return
+    try:
+        Path(out_dir).mkdir(parents=True, exist_ok=True)
+        (Path(out_dir) / "job.json").write_text(
+            json.dumps(job, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+    except OSError as exc:
+        logger.warning("could not persist job %s: %s", job.get("job_id"), exc)
+
+
+def _restore_finetune_jobs() -> None:
+    """Reload persisted job states from outputs/*/job.json after a restart.
+
+    Jobs that were pending/running when the server stopped are marked failed —
+    their subprocesses died with the server.
+    """
+    out_root = REPO_ROOT / "outputs"
+    if not out_root.exists():
+        return
+    for job_file in out_root.glob("*/job.json"):
+        try:
+            job = json.loads(job_file.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            logger.warning("skipping unreadable %s: %s", job_file, exc)
+            continue
+        job_id = job.get("job_id")
+        if not job_id:
+            continue
+        if job.get("status") in ("pending", "running"):
+            job["status"] = "failed"
+            job["message"] = "Interrupted by server restart."
+            job["updated_at"] = datetime.now().isoformat()
+            _persist_job(job)
+        finetune_jobs[job_id] = job
+    if finetune_jobs:
+        logger.info("Restored %d fine-tuning job(s) from outputs/.", len(finetune_jobs))
+
+
 def _run_subprocess(cmd: List[str]) -> None:
     """Run a finetuning subprocess from the repo root, raising on failure.
     Works on both Windows and Unix (pathlib handles path separators).
@@ -543,6 +594,7 @@ def _run_finetune_task(job_id: str, req: FinetuneRequest):
         if model_path is not None:
             job["model_path"] = model_path
         job["updated_at"] = datetime.now().isoformat()
+        _persist_job(job)
 
     try:
         update(status="running", progress=5, message="Validating input...")
@@ -603,6 +655,23 @@ def _run_finetune_task(job_id: str, req: FinetuneRequest):
         logger.error("[%s] fine-tuning failed: %s", job_id, exc)
 
 
+@app.post("/upload_train_jsonl")
+async def upload_train_jsonl(file: UploadFile = File(...)):
+    """Save an uploaded training JSONL under outputs/uploads/ and return its path.
+
+    Lets UI users pick a local file instead of typing a server-side path. The
+    audio paths INSIDE the JSONL must still be readable by this server.
+    """
+    name = Path(file.filename or "train.jsonl")
+    stem = "".join(c for c in name.stem if c.isalnum() or c in "-_") or "train"
+    dest_dir = REPO_ROOT / "outputs" / "uploads"
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / f"{datetime.now().strftime('%Y%m%d-%H%M%S')}_{stem}.jsonl"
+    dest.write_bytes(await file.read())
+    logger.info("Training JSONL uploaded: %s", dest)
+    return {"path": str(dest)}
+
+
 @app.post("/finetune_async", response_model=FinetuneJobResponse)
 def finetune_async(req: FinetuneRequest, background_tasks: BackgroundTasks):
     if not Path(req.train_jsonl).exists():
@@ -616,9 +685,11 @@ def finetune_async(req: FinetuneRequest, background_tasks: BackgroundTasks):
         "progress": 0,
         "message": "Queued.",
         "model_path": None,
+        "output_dir": str(REPO_ROOT / "outputs" / req.output_model_name),
         "created_at": now,
         "updated_at": now,
     }
+    _persist_job(finetune_jobs[job_id])
     background_tasks.add_task(_run_finetune_task, job_id, req)
     logger.info("[%s] fine-tuning queued", job_id)
     return FinetuneJobResponse(job_id=job_id, status="pending", progress=0)
@@ -639,6 +710,8 @@ def list_finetune_jobs():
 if __name__ == "__main__":
     import uvicorn
 
-    host = os.environ.get("QWEN_TTS_HOST", "0.0.0.0")
+    # Bind to localhost by default: the API has no authentication, so exposing
+    # it to the LAN must be an explicit choice (set QWEN_TTS_HOST=0.0.0.0).
+    host = os.environ.get("QWEN_TTS_HOST", "127.0.0.1")
     port = int(os.environ.get("QWEN_TTS_PORT", "8001"))
     uvicorn.run(app, host=host, port=port)

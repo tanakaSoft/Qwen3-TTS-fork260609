@@ -140,6 +140,17 @@ class QwenTTSAsyncClient:
     # ------------------------------------------------------------------ #
     # Fine-tuning
     # ------------------------------------------------------------------ #
+    def upload_train_jsonl(self, jsonl_path: str) -> str:
+        """Upload a training JSONL to the server; returns its server-side path."""
+        with open(jsonl_path, "rb") as f:
+            resp = requests.post(
+                f"{self.server_url}/upload_train_jsonl",
+                files={"file": f},
+                timeout=60,
+            )
+        self._raise_for_status(resp)
+        return resp.json()["path"]
+
     def start_finetune(
         self, train_jsonl: str, output_model_name: str = "finetuned_model",
         num_epochs: int = 10, batch_size: int = 32, lr: float = 2e-6,

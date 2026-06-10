@@ -65,7 +65,7 @@ class WhisperTranscriber:
         return pipeline(
             task="automatic-speech-recognition",
             model=self._hf_id,
-            torch_dtype=self._dtype,
+            dtype=self._dtype,
             device=self._device,
             # chunk_length_s enables long-form transcription (refs > 30 s).
             chunk_length_s=30,

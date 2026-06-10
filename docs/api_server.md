@@ -70,7 +70,7 @@ pip install -r server/requirements-server.txt
 python server\tts_server_async.py
 
 # OR with custom configuration
-$env:QWEN_TTS_HOST = "0.0.0.0"
+$env:QWEN_TTS_HOST = "0.0.0.0"   # expose to the LAN (default is 127.0.0.1, local only)
 $env:QWEN_TTS_PORT = "8001"
 $env:QWEN_TTS_LOAD = "voice_design,voice_clone,custom"
 $env:QWEN_TTS_CUSTOM = "C:\path\to\finetuned\checkpoint"
@@ -95,7 +95,7 @@ Environment variables control server behavior:
 
 | Variable | Default | Example |
 |---|---|---|
-| `QWEN_TTS_HOST` | `0.0.0.0` | `localhost` (Windows only) or `0.0.0.0` (accessible from other machines) |
+| `QWEN_TTS_HOST` | `127.0.0.1` | `0.0.0.0` to accept connections from other machines (no auth — LAN exposure is opt-in) |
 | `QWEN_TTS_PORT` | `8001` | `8080` |
 | `QWEN_TTS_DEVICE` | `cuda:0` | `cuda:1` (if multiple GPUs) or `cpu` |
 | `QWEN_TTS_LOAD` | `voice_design,voice_clone,custom` | `voice_clone` (load only one to save memory) |
@@ -281,9 +281,11 @@ Both use eager attention (standard PyTorch, officially supported).
 - **Single GPU, serialized requests.** The server processes one request at a time.
   Use `/batch_generate_custom_voice` for multiple texts rather than parallel requests.
 - **Fine-tuning runs in-process.** Only one at a time (GPU-intensive).
-  Job registry is in-memory; resets on server restart.
-- **Network access.** With `QWEN_TTS_HOST=0.0.0.0`, the server is accessible
-  from `localhost` (Windows/WSL2 same machine) or `<machine-ip>:8001` (other machines).
+  Job states are persisted to `outputs/<model>/job.json` and reloaded on
+  restart; jobs that were running when the server stopped are marked failed.
+- **Network access.** The server binds to `127.0.0.1` (local only) by default.
+  Set `QWEN_TTS_HOST=0.0.0.0` to accept connections from other machines —
+  the API has no authentication, so only do this on a trusted network.
 - **Production deployment.** Use a process manager (e.g., NSSM on Windows, systemd on Linux)
   and persistent job storage.
 

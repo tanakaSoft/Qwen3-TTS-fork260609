@@ -52,6 +52,18 @@ def create_finetune_tab(lang: str) -> None:
         except Exception as exc:  # noqa: BLE001
             return f"{_('error')}: {exc}", "error"
 
+    def upload_jsonl(local_path):
+        """Send the picked JSONL to the API server; fill the path textbox."""
+        if not local_path:
+            return gr.update(), _("ready")
+        try:
+            server_path = get_client().upload_train_jsonl(local_path)
+            return server_path, _("ft_uploaded")
+        except ConnectionError:
+            return gr.update(), _("not_connected")
+        except Exception as exc:  # noqa: BLE001
+            return gr.update(), f"{_('error')}: {exc}"
+
     def list_jobs():
         try:
             data = get_client().list_finetune_jobs()
@@ -76,6 +88,9 @@ def create_finetune_tab(lang: str) -> None:
         train_jsonl = gr.Textbox(
             label=_("ft_train_jsonl"),
             placeholder=r"C:\Users\you\train_raw.jsonl",
+        )
+        upload_file = gr.File(
+            label=_("ft_upload"), file_types=[".jsonl"], type="filepath"
         )
         with gr.Row():
             output_model_name = gr.Textbox(label=_("ft_model_name"), value="my_voice")
@@ -110,6 +125,7 @@ def create_finetune_tab(lang: str) -> None:
             inputs=[train_jsonl, output_model_name, speaker_name, num_epochs, batch_size, lr],
             outputs=[job_id, state],
         )
+        upload_file.upload(upload_jsonl, inputs=[upload_file], outputs=[train_jsonl, state])
         poll_btn.click(poll, inputs=[job_id], outputs=[progress_box, state])
         timer.tick(poll, inputs=[job_id], outputs=[progress_box, state])
         refresh_jobs_btn.click(list_jobs, outputs=[jobs_box])
