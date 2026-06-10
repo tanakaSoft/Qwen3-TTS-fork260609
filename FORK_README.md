@@ -123,23 +123,69 @@ survives server restarts.
 
 ## Use the API from your own apps
 
-The UI is optional — any app on the PC can call the API directly:
+The UI is optional — any program can call the API directly while the server
+runs. Full endpoint reference: **`docs/api_server.md`**.
+
+### Python (recommended): the bundled client
+
+`server/tts_client_async.py` is self-contained and GPU-free — it only needs
+`requests`, `numpy`, `soundfile`. To use it from **another project, just copy
+that one file** into it (or add this repo to `sys.path`):
 
 ```python
-from server.tts_client_async import QwenTTSAsyncClient
+from tts_client_async import QwenTTSAsyncClient   # the copied file
 
 tts = QwenTTSAsyncClient("http://localhost:8001")
 
-# Whisper-transcribe a reference clip, then clone the voice
+# 1) Voice Design — voice from a natural-language description
+audio, sr = tts.generate_voice_design(
+    text="こんにちは、今日は良い天気ですね。",
+    instruct="落ち着いた大人の女性、ゆっくり丁寧に話す",
+    language="Japanese",
+)
+tts.save_speech(audio, sr, "design.wav")
+
+# 2) Voice Clone — Whisper-transcribe a reference clip, then clone it
 ref_text = tts.auto_transcribe("reference.wav", model="large-v3")
 audio, sr = tts.generate_voice_clone(
     text="これはクローンした声です。",
     ref_audio_path="reference.wav",
     ref_text=ref_text,
-    language="Japanese",
-)
+    language="Japanese",          # set explicitly; "Auto" mimics the
+)                                 # reference's accent (see docs)
 tts.save_speech(audio, sr, "clone.wav")
+
+# 3) Custom Voice — fine-tuned model or official preset speakers
+tts.load_custom_model("Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice")  # once
+audio, sr = tts.generate_custom_voice(
+    text="プリセット話者で読み上げます。", speaker="serena", language="Japanese",
+)
+tts.save_speech(audio, sr, "custom.wav")
 ```
+
+`audio` is a float32 numpy array in -1..1; `sr` is 24000. Batch variants and
+the fine-tuning workflow are in `docs/api_server.md`.
+
+### Any language: plain HTTP
+
+Generation endpoints return JSON with `audio_base64` = base64-encoded
+**16-bit little-endian mono PCM** (no WAV header) plus `sample_rate`:
+
+```bash
+curl -X POST http://localhost:8001/generate_voice_design \
+  -H "Content-Type: application/json" \
+  -d '{"text":"Hello world","instruct":"a calm female voice","language":"English"}' \
+  -o response.json
+# response.json: {"audio_base64":"...","sample_rate":24000,"method":"voice_design"}
+```
+
+To play or save it, base64-decode and prepend a WAV header (or feed the raw
+PCM to your audio API as int16 @ 24 kHz mono). Interactive docs with every
+endpoint, schema and a try-it-out runner: **<http://localhost:8001/docs>**.
+
+> The server listens on `127.0.0.1` (this PC only) by default. To call it from
+> another machine, start it with `QWEN_TTS_HOST=0.0.0.0` — there is no
+> authentication, so only do that on a trusted network.
 
 ---
 
