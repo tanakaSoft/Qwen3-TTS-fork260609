@@ -55,11 +55,16 @@ git clone https://github.com/tanakaSoft/Qwen3-TTS-fork260609.git
 cd Qwen3-TTS-fork260609
 git checkout claude/qwen3-tts-finetuning-6lixq8
 
-uv sync
+uv venv --python 3.12
 .venv\Scripts\activate
-pip install torch --index-url https://download.pytorch.org/whl/cu128
-pip install -r server\requirements-server.txt
+uv pip install -e .
+uv pip install --reinstall torch torchaudio --index-url https://download.pytorch.org/whl/cu128
+uv pip install -r server\requirements-server.txt
 ```
+
+> Do **not** use `uv sync` — upstream's `requires-python = ">=3.9"` conflicts
+> with `accelerate`'s `>=3.10` and the universal resolve fails. The `--reinstall`
+> on torch is required: without it the CPU build stays in place.
 
 Then **double-click `Qwen3-TTS-Studio.bat`** (starts API → waits for `/health`
 → starts UI → opens the browser).
@@ -77,6 +82,42 @@ Full setup: **`docs/windows_setup.md`**.
 | **Voice Clone** | Clone from a reference clip; **Whisper auto-fills the reference text** |
 | **Fine-tuning** | Start a background fine-tuning job and watch progress |
 | **Settings** | Live GPU/VRAM stats (auto-refresh) + clear GPU cache |
+
+---
+
+## Fine-tuning from the Web UI
+
+Train a custom voice in the browser — no scripts needed.
+
+**1. Prepare training data** — one JSONL file, one line per clip:
+
+```json
+{"audio": "C:/data/clip1.wav", "text": "クリップ1の書き起こし", "ref_audio": "C:/data/ref.wav"}
+{"audio": "C:/data/clip2.wav", "text": "クリップ2の書き起こし", "ref_audio": "C:/data/ref.wav"}
+```
+
+Paths must be readable by the API server (same PC). `text` is the transcript of
+`audio`; `ref_audio` is a clip of the target voice. See `finetuning/README.md`.
+
+**2. Start the job** — open the **Fine-tuning** tab:
+
+| Field | Meaning |
+|---|---|
+| Training JSONL | Full path to the file above |
+| Model name | Output folder name → `outputs/<name>/` |
+| Speaker name | Name you will select when generating (e.g. `my_speaker`) |
+| Epochs / Batch / LR | Training knobs (defaults: 10 / 32 / 2e-6) |
+
+Click **Start**. A `job_id` appears and progress auto-refreshes every 5 s
+(data prep → training → loading the result). The job runs in the API server,
+so closing the browser does not stop it.
+
+**3. Use the voice** — when progress reaches 100%, the new checkpoint is
+**auto-loaded as the active CustomVoice model**. Switch to the **Custom Voice**
+tab, enter your speaker name, and generate. Checkpoints are saved under
+`outputs/<model name>/checkpoint-epoch-N` and stay selectable later via the
+Custom Voice tab's model picker (**Refresh** → select → **Load**), which also
+survives server restarts.
 
 ---
 
