@@ -98,6 +98,43 @@ _loaded_custom_path: Optional[str] = None
 # so without this lock two requests could touch the GPU at once.
 _GEN_LOCK = threading.Lock()
 
+
+def _model_source(kind: str) -> Optional[str]:
+    """The checkpoint a given model role (re)loads from."""
+    if kind == "voice_clone":
+        return BASE_MODEL
+    if kind == "voice_design":
+        return VOICE_DESIGN_MODEL
+    if kind == "custom":
+        if _loaded_custom_path:
+            return _loaded_custom_path
+        if CUSTOM_MODEL and Path(CUSTOM_MODEL).exists():
+            return CUSTOM_MODEL
+    return None
+
+
+def _ensure_model(kind: str) -> bool:
+    """Lazily (re)load a model that was dropped by /unload_models.
+
+    Called at the top of every generation endpoint, so ANY client (Web UI,
+    pipelines, curl) transparently triggers a reload after an unload: the
+    first request just takes a few seconds longer. Returns True when the
+    model is available. Models that were never enabled (not in QWEN_TTS_LOAD)
+    are NOT loaded here, so disabled models still 503 exactly as before.
+    """
+    if models.get(kind) is not None:
+        return True
+    if kind not in LOAD_MODELS:
+        return False
+    src = _model_source(kind)
+    if not src:
+        return False
+    with _GEN_LOCK:
+        if models.get(kind) is None:
+            logger.info("Reloading %s model on demand: %s", kind, src)
+            models[kind] = _load_model(src)
+    return models.get(kind) is not None
+
 # Lazily-created Whisper transcriber (transformers backend). Loaded on first
 # /auto_transcribe call so startup stays fast and VRAM is only used on demand.
 _whisper = None  # type: ignore[var-annotated]
@@ -269,7 +306,7 @@ def supported_languages():
 # --------------------------------------------------------------------------- #
 @app.post("/generate_custom_voice", response_model=TTSResponse)
 def generate_custom_voice(req: CustomVoiceRequest):
-    if models["custom"] is None:
+    if not _ensure_model("custom"):
         raise HTTPException(
             status_code=503,
             detail="Custom model not loaded. Run /finetune_async first, "
@@ -290,7 +327,7 @@ def generate_custom_voice(req: CustomVoiceRequest):
 
 @app.post("/batch_generate_custom_voice", response_model=BatchTTSResponse)
 def batch_generate_custom_voice(req: BatchCustomVoiceRequest):
-    if models["custom"] is None:
+    if not _ensure_model("custom"):
         raise HTTPException(status_code=503, detail="Custom model not loaded.")
     if not req.texts:
         raise HTTPException(status_code=400, detail="texts must be non-empty")
@@ -392,7 +429,7 @@ def load_custom_model(req: LoadCustomModelRequest):
 # --------------------------------------------------------------------------- #
 @app.post("/generate_voice_design", response_model=TTSResponse)
 def generate_voice_design(req: VoiceDesignRequest):
-    if models["voice_design"] is None:
+    if not _ensure_model("voice_design"):
         raise HTTPException(status_code=503, detail="VoiceDesign model not loaded.")
     try:
         with _GEN_LOCK:
@@ -417,7 +454,7 @@ async def generate_voice_clone(
     x_vector_only_mode: bool = Form(False),
     ref_audio: UploadFile = File(...),
 ):
-    if models["voice_clone"] is None:
+    if not _ensure_model("voice_clone"):
         raise HTTPException(status_code=503, detail="VoiceClone model not loaded.")
 
     suffix = Path(ref_audio.filename or "ref.wav").suffix or ".wav"
@@ -517,6 +554,34 @@ def clear_gpu_cache():
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
     return {"status": "ok"}
+
+
+@app.post("/unload_models")
+def unload_models():
+    """Unload all TTS models (and Whisper) from VRAM.
+
+    They reload LAZILY on the next generation request (see _ensure_model),
+    so clients keep working — the first request after an unload just takes a
+    few seconds longer. Lets other GPU jobs (e.g. image generation in a video
+    pipeline) borrow the full GPU between TTS batches.
+    """
+    global _whisper
+    unloaded: List[str] = []
+    with _GEN_LOCK:
+        for k in list(models):
+            if models[k] is not None:
+                models[k] = None
+                unloaded.append(k)
+        with _whisper_lock:
+            if _whisper is not None:
+                _whisper.unload()
+                _whisper = None
+                unloaded.append("whisper")
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    logger.info("Unloaded from VRAM: %s", ", ".join(unloaded) or "(nothing)")
+    return {"unloaded": unloaded}
 
 
 # --------------------------------------------------------------------------- #
